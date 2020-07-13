@@ -1,0 +1,17 @@
+[package]
+name = "PMXViewer_vk"
+version = "0.1.0"
+authors = ["t18b219k <t18b219k@mail.cc.niigata-u.ac.jp>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+vulkano="*"
+image="*"
+cgmath = "0.17.0"
+vulkano-shaders="*"
+vulkano-win="*"
+winit="*"
+PMXUtil="*"
+shaderc="*"
