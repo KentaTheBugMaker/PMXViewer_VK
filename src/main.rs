@@ -15,7 +15,7 @@ use vk::device::{Device, DeviceExtensions};
 use vk::format::Format;
 use vk::framebuffer::{FramebufferAbstract, RenderPassAbstract, Subpass};
 use vk::framebuffer::Framebuffer;
-use vk::image::{AttachmentImage, SwapchainImage};
+use vk::image::{AttachmentImage, SwapchainImage, ImageUsage};
 use vk::instance::{PhysicalDevice, PhysicalDeviceType};
 use vk::pipeline::GraphicsPipeline;
 use vk::pipeline::GraphicsPipelineAbstract;
@@ -96,7 +96,7 @@ fn main() {
 
 
     let caps = surface.capabilities(physical).unwrap();
-    let usage = caps.supported_usage_flags;
+
     let formats = caps.supported_formats;
     for fm in formats.iter() {
         println!("Format:{:#?} ColorSpace:{:#?}", fm.0, fm.1);
@@ -105,7 +105,7 @@ fn main() {
     let alpha = caps.supported_composite_alpha.iter().next().unwrap();
     let (mut swapchain, images) = {
         Swapchain::new(device.clone(), surface.clone(), caps.min_image_count, format, dimensions, 1,
-                       usage, &queue, SurfaceTransform::Identity, alpha, PresentMode::Fifo,
+                       ImageUsage::color_attachment(), &queue, SurfaceTransform::Identity, alpha, PresentMode::Fifo,
                        FullscreenExclusive::Default, true, ColorSpace::SrgbNonLinear).unwrap()
     };
 //loading and convert to buffers
@@ -309,10 +309,10 @@ fn main() {
                 if suboptimal {
                     recreate_swapchain = true;
                 }
-                let mut builder0 = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family()).unwrap();
 
-                let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family()).unwrap()
-                    .begin_render_pass(
+
+                let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family()).unwrap();
+                    builder.begin_render_pass(
                         framebuffers[image_num].clone(), false,
                         vec![
                             [0.0, 0.0, 1.0, 1.0].into(),
@@ -364,14 +364,14 @@ fn main() {
                             .add_buffer(uniform_buffer_subbuffer_material.clone()).unwrap()
                             .build().unwrap()
                     );
-                    builder = builder.draw_indexed(
+                     builder.draw_indexed(
                         pipeline.clone(),
                         &DynamicState::none(),
                         vec!(vertex_buffer.clone()),
-                        index_buffer.clone(), (set, set1), ()).unwrap()
+                        index_buffer.clone(), (set, set1), ()).unwrap();
                 }
-                let command_buffer = builder.end_render_pass().unwrap()
-                    .build().unwrap();
+                builder.end_render_pass().unwrap();
+                let command_buffer =    builder.build().unwrap();
 
 
                 let future = previous_frame_end.take().unwrap().join(acquire_future)
