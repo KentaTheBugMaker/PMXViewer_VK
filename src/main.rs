@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use cgmath::{Matrix3, Matrix4, Point3, Rad, Vector3};
 use vk::buffer::{BufferUsage, CpuBufferPool};
-use vk::command_buffer::{AutoCommandBufferBuilder, DynamicState};
+use vk::command_buffer::{AutoCommandBufferBuilder, DynamicState, SubpassContents};
 use vk::descriptor::descriptor_set::PersistentDescriptorSet;
 use vk::descriptor::PipelineLayoutAbstract;
 use vk::device::{Device, DeviceExtensions};
@@ -37,12 +37,14 @@ use shaders::fs as fs;
 use shaders::vs as vs;
 
 use crate::util::util::{convert_to_vertex_buffer, make_draw_asset, Vertex};
+use PMXUtil::pmx_loader::ModelInfoLoader;
 
-mod shader_transpiler;
-mod shader_loader;
+
 mod shaders;
 mod util;
-mod tokenizer;
+mod renderer;
+mod tiny_ui;
+
 fn main() {
     let required_extension = vulkano_win::required_extensions();
     let layer_list = layers_list().unwrap();
@@ -111,18 +113,18 @@ fn main() {
 //loading and convert to buffers
 
     let path = std::env::args().skip(1).next().unwrap();
-    let mut loader = PMXUtil::pmx_loader::pmx_loader::PMXLoader::open(&path);
-    loader.read_pmx_model_info().unwrap();
+    let mut loader = PMXUtil::pmx_loader::PMXLoader::open(&path);
+    let (model_info,ns) =  ModelInfoLoader::read_pmx_model_info(loader);
 
-    let vertices = loader.read_pmx_vertices().unwrap();
+    let (vertices,ns) = ns.read_pmx_vertices();
     let mut vertex_buffer = convert_to_vertex_buffer(device.clone(), &vertices);
 
-    let mut faces = loader.read_pmx_faces().unwrap();
+    let ( mut faces,ns) = ns.read_pmx_faces();
 
-    let texture_list = loader.read_texture_list().unwrap();
-    let materials = loader.read_pmx_materials().unwrap();
+    let (texture_list,ns) = ns.read_texture_list();
+    let (materials,ns) = ns.read_pmx_materials();
 
-    let (mut assets, mut textures) = make_draw_asset(device.clone(), queue.clone(), &mut faces, &texture_list, &materials, &path);
+    let (mut assets, mut textures) = make_draw_asset(device.clone(), queue.clone(),  faces, &texture_list, &materials, &path);
 
     let uniform_buffer = CpuBufferPool::<vs::ty::Data>::new(device.clone(), BufferUsage::all());
     let uniform_buffer_screen = CpuBufferPool::<fs::ty::Image>::new(device.clone(), BufferUsage::uniform_buffer());
@@ -181,19 +183,19 @@ fn main() {
             Event::WindowEvent { event: WindowEvent::DroppedFile(buf), .. } => {
                 let path = buf.as_path().to_str().unwrap();
                 println!("Path:{}", path);
-                let mut loader = PMXUtil::pmx_loader::pmx_loader::PMXLoader::open(&buf);
-                loader.read_pmx_model_info().unwrap();
+                let mut loader = PMXUtil::pmx_loader::PMXLoader::open(&buf);
+                let (model_info,ns) = loader.read_pmx_model_info();
 
-                let vertices = loader.read_pmx_vertices().unwrap();
+                let (vertices,ns) = ns.read_pmx_vertices();
                 vertex_buffer = convert_to_vertex_buffer(device.clone(), &vertices);
 
-                let mut faces = loader.read_pmx_faces().unwrap();
+                let (mut faces,ns) = ns.read_pmx_faces();
 
-                let texture_list = loader.read_texture_list().unwrap();
-                let materials = loader.read_pmx_materials().unwrap();
+                let (texture_list ,ns)= ns.read_texture_list();
+                let (materials,ns) = ns.read_pmx_materials();
 
                 textures.clear();
-                let da = make_draw_asset(device.clone(), queue.clone(), &mut faces, &texture_list, &materials, path);
+                let da = make_draw_asset(device.clone(), queue.clone(), faces, &texture_list, &materials, path);
                 assets = da.0;
                 textures = da.1;
             }
@@ -313,7 +315,7 @@ fn main() {
 
                 let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family()).unwrap();
                     builder.begin_render_pass(
-                        framebuffers[image_num].clone(), false,
+                        framebuffers[image_num].clone(), SubpassContents::Inline,
                         vec![
                             [0.0, 0.0, 1.0, 1.0].into(),
                             1f32.into()

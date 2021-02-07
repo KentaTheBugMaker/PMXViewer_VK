@@ -5,14 +5,14 @@ pub mod util {
     use std::sync::Arc;
     use std::thread;
 
-    use PMXUtil::pmx_types::pmx_types::{PMXFaces, PMXMaterials, PMXSphereMode, PMXTextureList, PMXVertex, PMXVertices};
+    use PMXUtil::pmx_types::pmx_types::{PMXSphereMode, PMXTextureList, PMXVertex, PMXFace, PMXMaterial};
     use vk::buffer::{BufferUsage, CpuAccessibleBuffer};
     use vk::device::{Device, Queue};
     use vk::format::Format;
     use vk::image::{Dimensions, ImmutableImage};
     use vk::memory::pool::PotentialDedicatedAllocation;
     use vk::sync::GpuFuture;
-
+    use vk::image::MipmapsCount;
     #[derive(Default, Copy, Clone)]
     pub struct Vertex {
         position: [f32; 4],
@@ -28,8 +28,8 @@ pub mod util {
         }
     }
 
-    pub fn convert_to_vertex_buffer(device: Arc<Device>, v: &PMXVertices) -> Arc<CpuAccessibleBuffer<[Vertex], PotentialDedicatedAllocation<vk::memory::pool::StdMemoryPoolAlloc>>> {
-        let vertices = &v.vertices;
+    pub fn convert_to_vertex_buffer(device: Arc<Device>, v: &[PMXVertex]) -> Arc<CpuAccessibleBuffer<[Vertex], PotentialDedicatedAllocation<vk::memory::pool::StdMemoryPoolAlloc>>> {
+        let vertices = v.clone();
         let mut out = vec![];
         for elem in vertices {
             out.push(convert_to_vertex(elem));
@@ -37,8 +37,8 @@ pub mod util {
         CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::vertex_buffer(), false, out.iter().cloned()).unwrap()
     }
 
-    pub fn convert_to_index_buffer(device: Arc<Device>, triangles: &PMXFaces) -> Arc<CpuAccessibleBuffer<[u32], PotentialDedicatedAllocation<vk::memory::pool::StdMemoryPoolAlloc>>> {
-        let triangles = &triangles.faces;
+    pub fn convert_to_index_buffer(device: Arc<Device>, triangles: &[PMXFace]) -> Arc<CpuAccessibleBuffer<[u32], PotentialDedicatedAllocation<vk::memory::pool::StdMemoryPoolAlloc>>> {
+        let triangles = triangles;
         let mut indices = vec![];
         for elem in triangles {
             indices.push(elem.vertices[0]);
@@ -61,9 +61,9 @@ pub mod util {
         pub    sp: i32,
     }
 
-    pub fn make_draw_asset(device: Arc<Device>, queue: Arc<Queue>, faces: &mut PMXFaces, texture_list: &PMXTextureList, materials: &PMXMaterials, filename: &str) -> (Vec<DrawAsset>, Vec<Arc<ImmutableImage<Format>>>) {
+    pub fn make_draw_asset(device: Arc<Device>, queue: Arc<Queue>, faces: Vec<PMXFace>, texture_list: &PMXTextureList, materials: &[PMXMaterial], filename: &str) -> (Vec<DrawAsset>, Vec<Arc<ImmutableImage<Format>>>) {
         let mut out = Vec::new();
-        let v = &mut faces.faces;
+        let mut v =  faces.clone();
         let mut end;
         let mut textures = Vec::new();
         let blank_texture_id = texture_list.textures.len();
@@ -86,7 +86,11 @@ pub mod util {
             let join_handle = thread::spawn(move || {
                 let image = image::load(reader, read_as).unwrap().to_rgba();
                 let dimensions = image.dimensions();
-                let (texture, texture_future) = ImmutableImage::from_iter(image.iter().cloned(), Dimensions::Dim2d { width: dimensions.0, height: dimensions.1 }, Format::R8G8B8A8Srgb, qc.clone()).unwrap();
+
+                let (texture, texture_future) = ImmutableImage::from_iter(
+                    image.iter().cloned(),
+                    Dimensions::Dim2d { width: dimensions.0, height: dimensions.1 },
+                    MipmapsCount::One ,Format::R8G8B8A8Srgb, qc.clone()).unwrap();
                 let mut future = Some(Box::new(texture_future) as Box<dyn GpuFuture>);
                 future.take().unwrap().flush().unwrap();
                 texture
@@ -97,17 +101,22 @@ pub mod util {
         let image = image::open("./blank.png").unwrap().to_rgba();
 
         let dimensions = image.dimensions();
-        let (texture, texture_future) = ImmutableImage::from_iter(image.iter().cloned(), Dimensions::Dim2d { width: dimensions.0, height: dimensions.1 }, Format::R8G8B8A8Srgb, queue.clone()).unwrap();
+        let (texture, texture_future) = ImmutableImage::from_iter(
+            image.iter().cloned(),
+            Dimensions::Dim2d { width: dimensions.0, height: dimensions.1 },
+            MipmapsCount::One,
+            Format::R8G8B8A8Srgb, queue.clone()).unwrap();
         let mut future = Some(Box::new(texture_future) as Box<dyn GpuFuture>);
         future.take().unwrap().flush().unwrap();
 
         textures.push(texture);
         println!("End Loading Textures...");
-        for material in &materials.materials {
+        for material in materials {
             end = (material.num_face_vertices / 3) as usize;//
             println!("len:{},({},{})", v.len(), 0, end);
-            let v = v.drain(0..end).collect();
-            let faces = PMXFaces { faces: v };
+
+            let v :Vec<PMXFace>= v.drain(0..end).collect();
+            let faces = v;
             let ibo = convert_to_index_buffer(device.clone(), &faces);
             let sp = match material.spheremode {
                 PMXSphereMode::None => { 0 }
